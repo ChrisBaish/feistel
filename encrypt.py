@@ -5,7 +5,7 @@ import os
 import argparse
 from pkcs import PKCS7
 from feistel import FeistelNetwork
-from modes import ECB, CBC, CTR
+from modes import ECB, CBC, CTR, GCM
 from iterators import file_block_iterator, eof_signal_iterator
 
 """
@@ -21,7 +21,8 @@ def main():
     group.add_argument('-d', '--decrypt', action="store_true")
     parser.add_argument('-m', '--mode', type=str, default='ECB')
     parser.add_argument('-i', '--iv', type=str, help='Initialization Vector, used for CBC mode')
-    parser.add_argument('-n', '--nonce', type=str, help='Nonce to use for CTR mode')
+    parser.add_argument('-n', '--nonce', type=str, help='Nonce to use for [Galois] Counter Mode')
+    parser.add_argument('-a', '--header', type=str, help='Header to use with Galois Counter Mode')
     parser.add_argument("input_file")
     parser.add_argument("output_file")
     args = parser.parse_args()
@@ -62,6 +63,39 @@ def main():
                 nonce = nonce.rjust(nonce_size, b'\0')
 
         mode = CTR(cipher, nonce)
+
+    elif args.mode == "GCM":
+
+        if args.nonce is None:
+            parser.error("CTR mode requires a value for --nonce")
+
+        nonce_size = cipher.block_size // 2
+        try:
+            nonce = int(args.nonce)
+            nonce = nonce.to_bytes(nonce_size, "big")
+        except ValueError:
+            nonce = args.nonce.encode("utf-8")
+            if len(nonce) > nonce_size:
+                nonce = nonce[:nonce_size]
+            else:
+                nonce = nonce.rjust(nonce_size, b'\0')
+
+        if args.header is None:
+            header = "Default Header"
+        else:
+            header = args.header
+
+        try:
+            header = int(header)
+            header = header.to_bytes(cipher.block_size, "big")
+        except ValueError:
+            header = header.encode("utf-8")
+            if len(header) > cipher.block_size:
+                header = header[:cipher.block_size]
+            else:
+                header = header.rjust(cipher.block_size, b'\0')
+
+        mode = GCM(cipher, nonce, header)
     else:
         raise ValueError("Mode of operation {} is not recognised".format(args.mode))
 
